@@ -1,13 +1,13 @@
 import os
-import google.generativeai as genai
+import base64
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import Optional
-import base64
+from google import genai
+from google.genai import types
 
 router = APIRouter()
 
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 
 # ─── Sohbet ───────────────────────────────────────────────
@@ -27,19 +27,26 @@ class ChatResponse(BaseModel):
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
-    model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
-        system_instruction=req.system_prompt,
-    )
-
-    # Geçmiş mesajları Gemini formatına çevir
     history = [
-        {"role": msg.role, "parts": [msg.text]}
+        types.Content(
+            role=msg.role,
+            parts=[types.Part(text=msg.text)]
+        )
         for msg in req.history
     ]
 
-    chat_session = model.start_chat(history=history)
-    response = chat_session.send_message(req.message)
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        config=types.GenerateContentConfig(
+            system_instruction=req.system_prompt,
+        ),
+        contents=history + [
+            types.Content(
+                role="user",
+                parts=[types.Part(text=req.message)]
+            )
+        ],
+    )
 
     return ChatResponse(response=response.text)
 
@@ -52,18 +59,30 @@ class ImageChatRequest(BaseModel):
     system_prompt: str
     message: str
 
+
 @router.post("/chat/image", response_model=ChatResponse)
 async def chat_with_image(req: ImageChatRequest):
-    model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
-        system_instruction=req.system_prompt,
-    )
-
     image_data = base64.b64decode(req.image_base64)
 
-    response = model.generate_content([
-        {"mime_type": req.mime_type, "data": image_data},
-        req.message,
-    ])
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        config=types.GenerateContentConfig(
+            system_instruction=req.system_prompt,
+        ),
+        contents=[
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part(
+                        inline_data=types.Blob(
+                            mime_type=req.mime_type,
+                            data=image_data,
+                        )
+                    ),
+                    types.Part(text=req.message),
+                ]
+            )
+        ],
+    )
 
     return ChatResponse(response=response.text)
