@@ -3,7 +3,7 @@ uvicorn
 pydantic
 python-dotenv
 requests
-google-generativeai
+google-genai
 pytest
 httpx
 python-multipart
