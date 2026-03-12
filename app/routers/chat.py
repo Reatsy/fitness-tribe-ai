@@ -1,6 +1,6 @@
 import os
 import base64
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from google import genai
 from google.genai import types
@@ -9,11 +9,18 @@ router = APIRouter()
 
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
+API_SECRET = os.getenv("FITNEXIA_API_SECRET", "")
+
+def verify_token(x_api_key: str = Header(None)):
+    if not API_SECRET:
+        return
+    if x_api_key != API_SECRET:
+        raise HTTPException(status_code=401, detail="Yetkisiz erişim")
 
 # ─── Sohbet ───────────────────────────────────────────────
 
 class ChatMessage(BaseModel):
-    role: str   # 'user' veya 'model'
+    role: str
     text: str
 
 class ChatRequest(BaseModel):
@@ -26,7 +33,8 @@ class ChatResponse(BaseModel):
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, x_api_key: str = Header(None)):
+    verify_token(x_api_key)
     history = [
         types.Content(
             role=msg.role,
@@ -61,7 +69,8 @@ class ImageChatRequest(BaseModel):
 
 
 @router.post("/chat/image", response_model=ChatResponse)
-async def chat_with_image(req: ImageChatRequest):
+async def chat_with_image(req: ImageChatRequest, x_api_key: str = Header(None)):
+    verify_token(x_api_key)
     image_data = base64.b64decode(req.image_base64)
 
     response = client.models.generate_content(
